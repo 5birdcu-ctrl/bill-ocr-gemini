@@ -60,7 +60,7 @@
   <header class="mb-6 pb-4 border-b-2 border-ink flex flex-col sm:flex-row sm:items-end justify-between gap-4">
     <div>
         <div class="flex items-center gap-2">
-            <h1 class="font-serif text-3xl font-bold tracking-tight">บิล<span class="text-accent">สแกนV1</span></h1>
+            <h1 class="font-serif text-3xl font-bold tracking-tight">บิล<span class="text-accent">สแกนVV1</span></h1>
             <span class="text-[10px] text-white bg-cloud px-1.5 py-0.5 rounded uppercase tracking-widest flex items-center gap-1 shadow-sm">
                 ☁️ Cloud Edition
             </span>
@@ -108,8 +108,8 @@
       </div>
     </section>
 
-    <!-- Error Box -->
-    <div id="error-box" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-medium"></div>
+    <!-- Error Box ปรับปรุงให้ชัดเจนขึ้น -->
+    <div id="error-box" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-medium space-y-1"></div>
 
     <!-- Loading สำหรับ Bulk Scan -->
     <div id="loading" class="hidden py-8 text-center bg-white border border-line rounded-lg shadow-sm">
@@ -412,6 +412,7 @@
         
         document.getElementById('result-area').classList.add('hidden');
         document.getElementById('error-box').classList.add('hidden');
+        document.getElementById('error-box').innerHTML = ''; // Clear old errors
         
         currentImages = [];
         const gallery = document.getElementById('preview-gallery');
@@ -448,10 +449,12 @@
         const loadingDiv = document.getElementById('loading');
         const progressText = document.getElementById('loading-text');
         const progressBar = document.getElementById('loading-progress');
+        const errorBox = document.getElementById('error-box');
         
+        errorBox.innerHTML = '';
+        errorBox.classList.add('hidden');
         loadingDiv.classList.remove('hidden');
         document.getElementById('upload-section').classList.add('hidden');
-        document.getElementById('error-box').classList.add('hidden');
         
         let successCount = 0;
 
@@ -482,8 +485,10 @@
                 successCount++;
             } catch (err) {
                 console.error(`Error processing image ${i+1}:`, err);
-                // แสดงข้อความ Error ให้ผู้ใช้เห็นชัดเจนว่าติดที่ API หรือ Firebase
-                showToast(`❌ ขัดข้องที่ภาพ ${i+1}: ${err.message}`);
+                
+                // นำ Error มาแสดงบนหน้าจอในกล่องแดงให้เห็นชัดเจน
+                errorBox.classList.remove('hidden');
+                errorBox.innerHTML += `<div>❌ <b>ภาพที่ ${i+1} ขัดข้อง:</b> ${err.message}</div>`;
             }
         }
         
@@ -492,8 +497,13 @@
         document.getElementById('upload-section').classList.remove('hidden');
         window.clearImage();
         
-        showToast(`🎉 บันทึกขึ้น Cloud สำเร็จ ${successCount}/${totalImages} ใบ`);
-        window.switchTab('dashboard');
+        // ถ้าระบบไม่ได้ขัดข้องทั้งหมด ให้ย้ายหน้าไป Dashboard
+        if(successCount > 0) {
+            showToast(`🎉 บันทึกขึ้น Cloud สำเร็จ ${successCount}/${totalImages} ใบ`);
+            window.switchTab('dashboard');
+        } else {
+            showToast(`⚠️ อัปโหลดล้มเหลว โปรดดูข้อผิดพลาดในกล่องสีแดง`);
+        }
     };
 
     async function scanSingleImage(mimeType, base64Data) {
@@ -520,14 +530,18 @@
 
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`API Error ${response.status}: โปรดตรวจสอบ API Key`);
+            throw new Error(`API Error ${response.status}: ${errText}`);
         }
         
         const data = await response.json();
         let textResult = data.candidates[0].content.parts[0].text;
         
-        // ลบ markdown formatting (```json) เผื่อ AI ส่งมา
-        textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
+        // ดึงเฉพาะข้อมูลที่อยู่ในวงเล็บปีกกา {} เผื่อ AI ส่งข้อความขยะแถมมาด้วย
+        const jsonMatch = textResult.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            textResult = jsonMatch[0];
+        }
+        
         return JSON.parse(textResult);
     }
 
