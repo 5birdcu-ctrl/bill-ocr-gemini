@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>บิลสแกน CLOUD — ระบบจัดการบิลออนไลน์</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Noto+Serif+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: { ink: '#1a1410', paper: '#faf7f2', paper2: '#f3ede3', accent: '#c8601a', accent2: '#2d6a4f', line: '#d4c9b8', muted: '#8a7d6e', cloud: '#0ea5e9' },
+                fontFamily: { sans: ['Sarabun', 'sans-serif'], serif: ['Noto Serif Thai', 'serif'] }
+            }
+        }
+    }
+</script>
+<style>
+  body { background-color: var(--paper); color: var(--ink); min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+  body::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; background-image: repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(180,160,130,0.08) 31px, rgba(180,160,130,0.08) 32px); }
+  .app-container { position: relative; z-index: 1; }
+  .neo-panel { background: white; border: 1.5px solid #d4c9b8; border-radius: 8px; box-shadow: 4px 4px 0 #d4c9b8; overflow: hidden; }
+  .neo-btn { transition: all 0.2s; }
+  .neo-btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 transparent; }
+  .edit-input { width: 100%; background: transparent; border: 1px solid transparent; border-bottom: 1px dashed var(--line); padding: 2px 4px; font-family: inherit; color: inherit; transition: all 0.2s; }
+  .edit-input:focus { outline: none; border-bottom-color: var(--accent); background: #fff8f4; }
+  .edit-input.num { text-align: right; }
+  .custom-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+  .custom-scroll::-webkit-scrollbar-track { background: #f3ede3; border-radius: 4px; }
+  .custom-scroll::-webkit-scrollbar-thumb { background: #c8601a; border-radius: 4px; }
+  .loading-dot { animation: bounce 1.2s infinite ease-in-out; }
+  .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+  .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+  #toast { transition: opacity 0.3s, transform 0.3s; transform: translateY(100%); opacity: 0; z-index: 100; }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .tab-btn { opacity: 0.6; border-bottom: 2px solid transparent; }
+  .tab-btn.active { opacity: 1; border-bottom-color: var(--accent); font-weight: 600; color: var(--accent); }
+  .dash-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; box-shadow: 2px 2px 0 var(--line); }
+  .img-thumbnail { width: 64px; height: 64px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+  .filter-select { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; font-size: 13px; font-weight: 500; outline: none; cursor: pointer; }
+  
+  /* Cloud status indicator */
+  #cloud-status {
+      display: inline-flex; items-center; gap: 4px; font-size: 11px; padding: 4px 8px; 
+      border-radius: 12px; font-weight: 600; transition: all 0.3s;
+  }
+  .cloud-connecting { background: #fef08a; color: #a16207; }
+  .cloud-connected { background: #e0f2fe; color: #0284c7; }
+</style>
+</head>
+<body class="antialiased selection:bg-accent selection:text-white">
+
+<div class="app-container max-w-5xl mx-auto p-4 pb-24">
+  
+  <header class="mb-6 pb-4 border-b-2 border-ink flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+    <div>
+        <div class="flex items-center gap-2">
+            <h1 class="font-serif text-3xl font-bold tracking-tight">บิล<span class="text-accent">สแกน</span></h1>
+            <span class="text-[10px] text-white bg-cloud px-1.5 py-0.5 rounded uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                ☁️ Cloud Edition
+            </span>
+        </div>
+        <p class="text-muted text-sm font-medium mt-1 flex items-center gap-2">
+            บันทึกข้อมูลถาวรบน Cloud Database
+            <span id="cloud-status" class="cloud-connecting">⏳ กำลังเชื่อมต่อ...</span>
+        </p>
+    </div>
+    <div class="flex gap-4 font-medium text-sm border-b sm:border-0 border-line/30 pb-1 sm:pb-0 overflow-x-auto custom-scroll">
+        <button onclick="switchTab('scan')" id="tab-scan" class="tab-btn active pb-1 transition-all whitespace-nowrap">📸 สแกนบิล</button>
+        <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn pb-1 transition-all whitespace-nowrap flex items-center gap-1">📈 แดชบอร์ด</button>
+        <button onclick="switchTab('history')" id="tab-history" class="tab-btn pb-1 transition-all whitespace-nowrap flex items-center gap-1">📋 ประวัติบิล</button>
+        <button onclick="switchTab('master')" id="tab-master" class="tab-btn pb-1 transition-all whitespace-nowrap flex items-center gap-1 text-muted">📦 ตั้งค่าคลัง</button>
+    </div>
+  </header>
+
+  <!-- TAB 1: SCAN (BULK UPLOAD) -->
+  <div id="view-scan" class="tab-content active space-y-5">
+    <section class="neo-panel" id="upload-section">
+      <div class="bg-ink text-white px-4 py-2 text-xs font-semibold tracking-wider flex items-center justify-between">
+        <div class="flex items-center gap-2">📸 อัปโหลดบิล (เลือกได้หลายภาพ)</div>
+        <button id="cancel-edit-btn" onclick="resetToUpload()" class="hidden bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded transition-colors">ยกเลิกแก้ไข</button>
+      </div>
+      <div class="p-4 sm:p-5">
+        <label id="upload-dropzone" for="file-input" class="block border-2 border-dashed border-line rounded-lg p-8 text-center cursor-pointer bg-paper hover:bg-sky-50 hover:border-cloud transition-colors relative group">
+          <input type="file" id="file-input" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+          <div class="text-4xl mb-3 grayscale opacity-70 group-hover:grayscale-0 group-hover:opacity-100 transition-all">📸</div>
+          <div class="text-sm text-muted">
+            <span class="font-semibold text-ink">แตะเพื่อเลือกภาพจากอัลบั้ม</span> หรือลากไฟล์มาวาง<br>
+          </div>
+        </label>
+
+        <div id="preview-container" class="hidden mt-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-cloud" id="preview-count-text">เลือกแล้ว 0 ภาพ</span>
+                <button onclick="clearImage()" class="text-xs text-red-500 font-semibold hover:underline">ล้างทั้งหมด</button>
+            </div>
+            <div id="preview-gallery" class="flex gap-2 overflow-x-auto pb-2 custom-scroll"></div>
+        </div>
+
+        <button id="scan-btn" disabled onclick="processBulkScan()" class="w-full mt-4 bg-cloud text-white font-semibold py-3 px-4 rounded-md shadow-[0_3px_0_#0284c7] disabled:bg-muted disabled:shadow-none disabled:cursor-not-allowed neo-btn flex items-center justify-center gap-2">
+          ✨ สแกนรูปทั้งหมดเข้า Cloud AI
+        </button>
+      </div>
+    </section>
+
+    <!-- Error Box -->
+    <div id="error-box" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-medium"></div>
+
+    <!-- Loading สำหรับ Bulk Scan -->
+    <div id="loading" class="hidden py-8 text-center bg-white border border-line rounded-lg shadow-sm">
+      <div class="text-4xl mb-2">🤖</div>
+      <p class="text-ink font-semibold text-sm mb-2" id="loading-text">กำลังวิเคราะห์ภาพ...</p>
+      <div class="w-2/3 mx-auto bg-paper2 rounded-full h-2.5 overflow-hidden border border-line">
+        <div id="loading-progress" class="bg-cloud h-2.5 transition-all duration-300" style="width: 0%"></div>
+      </div>
+      <p class="text-xs text-muted mt-2">โปรดรอสักครู่ ระบบกำลังบันทึกข้อมูลขึ้น Cloud ☁️</p>
+    </div>
+
+    <!-- Editable Result Area -->
+    <div id="result-area" class="hidden space-y-4">
+      <section class="neo-panel border-cloud">
+        <div class="bg-cloud text-white px-4 py-2 text-xs font-semibold tracking-wider flex items-center justify-between">
+          <span>📝 แก้ไขข้อมูลบิล</span>
+        </div>
+        <div class="p-0 sm:p-2">
+          <div class="bg-paper sm:border border-line sm:rounded text-sm">
+            <div class="grid grid-cols-2 gap-[1px] bg-line mb-2 sm:rounded-t overflow-hidden">
+                <div class="bg-paper2 p-3 relative">
+                    <label class="text-[10px] text-muted uppercase tracking-wider block mb-1">เลขที่บิล</label>
+                    <input type="text" id="edit-bill-no" class="edit-input font-mono font-semibold" readonly>
+                </div>
+                <div class="bg-paper2 p-3">
+                    <label class="text-[10px] text-muted uppercase tracking-wider block mb-1">วันที่ (YYYY-MM-DD)</label>
+                    <input type="text" id="edit-date" class="edit-input font-semibold">
+                </div>
+                <div class="bg-paper2 p-3 col-span-2">
+                    <label class="text-[10px] text-muted uppercase tracking-wider block mb-1">ลูกค้า</label>
+                    <input type="text" id="edit-customer" class="edit-input font-semibold text-base">
+                </div>
+            </div>
+            <div class="custom-scroll overflow-x-auto px-1 sm:px-3">
+                <table class="w-full min-w-[500px]">
+                    <thead>
+                        <tr class="text-xs text-muted border-b-2 border-line">
+                            <th class="py-2 px-2 text-left font-semibold">รายการสินค้า</th>
+                            <th class="py-2 px-2 text-center font-semibold w-16">จำนวน</th>
+                            <th class="py-2 px-2 text-right font-semibold w-24">ราคา/หน่วย</th>
+                            <th class="py-2 px-2 text-right font-semibold w-24">รวม</th>
+                            <th class="py-2 px-1 w-8"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="edit-items-tbody"></tbody>
+                </table>
+                <button onclick="addNewItemRow()" class="mt-2 text-cloud text-xs font-semibold flex items-center gap-1 hover:underline p-2">+ เพิ่มรายการ</button>
+            </div>
+            <div class="mt-4 border-t-2 border-ink pt-3 pb-3 px-4 flex justify-between items-baseline bg-paper2/50">
+                <div class="text-right flex items-baseline gap-3 w-full justify-end">
+                    <span class="text-sm font-semibold text-muted uppercase tracking-wide">ยอดรวม</span>
+                    <div class="relative">
+                        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-muted font-bold">฿</span>
+                        <input type="number" id="edit-grand-total" class="edit-input num font-bold text-xl text-cloud w-32 pl-6" step="0.01">
+                    </div>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <button onclick="saveCurrentBill()" id="save-bill-btn" class="w-full bg-cloud text-white font-semibold py-3 px-4 rounded shadow-[0_3px_0_#0284c7] neo-btn flex items-center justify-center gap-2">
+        ☁️ อัปเดตข้อมูลขึ้น Cloud
+      </button>
+    </div>
+  </div>
+
+  <!-- TAB 2: DASHBOARD WITH FILTERS -->
+  <div id="view-dashboard" class="tab-content">
+    <div class="bg-paper2 border border-line rounded-lg p-3 mb-6 flex flex-wrap gap-4 items-center">
+        <span class="text-xs font-semibold uppercase text-muted tracking-wide">ตัวกรอง (Filter):</span>
+        <select id="filter-month" class="filter-select" onchange="updateDashboard()">
+            <option value="all">ทุกเดือน</option>
+        </select>
+        <select id="filter-customer" class="filter-select" onchange="updateDashboard()">
+            <option value="all">ทุกลูกค้า</option>
+        </select>
+        <button onclick="resetFilters()" class="text-xs text-muted hover:text-ink underline ml-auto">ล้างตัวกรอง</button>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="dash-card">
+            <div class="text-[10px] uppercase text-muted tracking-wider mb-1">ยอดขายรวม</div>
+            <div class="text-xl sm:text-2xl font-bold text-cloud font-mono truncate" id="dash-total-revenue">฿0.00</div>
+        </div>
+        <div class="dash-card">
+            <div class="text-[10px] uppercase text-muted tracking-wider mb-1">จำนวนบิลทั้งหมด</div>
+            <div class="text-xl sm:text-2xl font-bold text-ink font-mono" id="dash-total-bills">0 <span class="text-sm font-sans text-muted">ใบ</span></div>
+        </div>
+        <div class="dash-card">
+            <div class="text-[10px] uppercase text-muted tracking-wider mb-1">ยอดเฉลี่ยต่อบิล</div>
+            <div class="text-xl sm:text-2xl font-bold text-accent2 font-mono truncate" id="dash-avg-bill">฿0.00</div>
+        </div>
+        <div class="dash-card">
+            <div class="text-[10px] uppercase text-muted tracking-wider mb-1">สินค้าที่ขายได้</div>
+            <div class="text-xl sm:text-2xl font-bold text-ink font-mono" id="dash-total-items">0 <span class="text-sm font-sans text-muted">ชิ้น</span></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <section class="neo-panel flex flex-col">
+            <div class="bg-ink text-white px-4 py-3 text-xs font-semibold tracking-wider border-b border-line">
+                📊 ยอดขายแยกตามเดือน
+            </div>
+            <div class="p-4 bg-white relative flex-1 min-h-[250px]"><canvas id="monthlyChart"></canvas></div>
+        </section>
+        <section class="neo-panel flex flex-col">
+            <div class="bg-ink text-white px-4 py-3 text-xs font-semibold tracking-wider border-b border-line">
+                🏆 ยอดขายแยกตามลูกค้า (Top 5)
+            </div>
+            <div class="p-4 bg-white relative flex-1 min-h-[250px]"><canvas id="customerChart"></canvas></div>
+        </section>
+    </div>
+  </div>
+
+  <!-- TAB 3: HISTORY WITH SHEETS INTEGRATION -->
+  <div id="view-history" class="tab-content">
+    <section class="neo-panel">
+      <div class="bg-ink text-white px-4 py-3 text-xs font-semibold tracking-wider flex items-center justify-between border-b border-line flex-wrap gap-2">
+        <div>📋 ประวัติบิลทั้งหมดบน Cloud</div>
+        <div class="flex gap-2 items-center flex-wrap">
+            <input type="text" id="gas-url" placeholder="วาง URL Google Apps Script" class="text-ink px-2 py-1.5 rounded text-xs w-48 border border-transparent focus:border-accent outline-none font-sans">
+            <button onclick="syncToSheets(event)" class="bg-cloud hover:bg-sky-600 px-3 py-1.5 rounded transition-colors text-xs flex items-center gap-1 shadow-sm text-white font-semibold">🚀 ส่งเข้า Sheets</button>
+            <button onclick="exportBillCSV()" class="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded transition-colors text-xs">📥 Export CSV</button>
+        </div>
+      </div>
+      <div class="custom-scroll overflow-x-auto">
+        <table class="w-full text-sm min-w-[650px]">
+            <thead class="bg-paper2 border-b-2 border-line text-muted text-xs uppercase tracking-wide">
+                <tr>
+                    <th class="py-3 px-4 text-center w-12"><input type="checkbox" id="selectAll" onclick="toggleAll(this)" class="accent-cloud w-4 h-4 cursor-pointer"></th>
+                    <th class="py-3 px-4 text-left font-semibold">เลขที่บิล</th>
+                    <th class="py-3 px-4 text-left font-semibold">วันที่</th>
+                    <th class="py-3 px-4 text-left font-semibold">ลูกค้า</th>
+                    <th class="py-3 px-4 text-right font-semibold">ยอดรวม</th>
+                    <th class="py-3 px-4 text-center font-semibold w-20">จัดการ</th>
+                </tr>
+            </thead>
+            <tbody id="database-tbody" class="divide-y divide-line">
+                <tr><td colspan="6" class="text-center py-8 text-muted">กำลังโหลดข้อมูลจาก Cloud...</td></tr>
+            </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- TAB 4: MASTER DATA -->
+  <div id="view-master" class="tab-content">
+      <section class="neo-panel">
+        <div class="bg-ink text-white px-4 py-3 text-xs font-semibold tracking-wider border-b border-line">
+          📦 คลังข้อมูลสินค้าบน Cloud
+        </div>
+        <div class="p-5">
+            <p class="text-sm text-muted mb-4">อัปโหลดรายชื่อสินค้าเพื่อให้ AI ใช้ "อ้างอิงและช่วยสะกดคำให้ถูกต้อง" (บันทึกบน Cloud)</p>
+            <div class="flex gap-2 mb-6">
+                <input type="file" id="csv-input" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-cloud/10 file:text-cloud hover:file:bg-cloud/20 cursor-pointer border border-line rounded">
+                <button onclick="processCSV()" class="bg-cloud text-white px-4 py-2 rounded text-sm font-semibold whitespace-nowrap neo-btn">นำเข้าขึ้น Cloud</button>
+            </div>
+            <div class="bg-paper2 rounded border border-line p-4">
+                <h3 class="font-semibold text-sm mb-2">รายการสินค้าในระบบ (<span id="master-display-count">0</span>)</h3>
+                <div id="master-data-list" class="h-48 overflow-y-auto custom-scroll text-xs text-muted font-mono space-y-1 bg-white p-2 border border-line rounded">ไม่มีข้อมูล</div>
+                <button onclick="clearMasterData()" class="mt-3 text-red-500 text-xs font-semibold hover:underline">🗑️ ล้างข้อมูลบน Cloud</button>
+            </div>
+        </div>
+      </section>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-ink text-white px-6 py-3 rounded-full text-sm font-medium shadow-lg flex items-center gap-2">
+  <span id="toast-msg">แจ้งเตือน</span>
+</div>
+
+<!-- ========================================== -->
+<!-- FIREBASE CLOUD DATABASE & APPLICATION LOGIC -->
+<!-- ========================================== -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // 1. Setup Firebase Configuration (ข้อมูลของคุณ)
+    const firebaseConfig = {
+      apiKey: "AIzaSyBt7_Ou3RkZOg7X9TbRclj01OSE6JOpkCE",
+      authDomain: "bill-ocr-gemini.firebaseapp.com",
+      projectId: "bill-ocr-gemini",
+      storageBucket: "bill-ocr-gemini.firebasestorage.app",
+      messagingSenderId: "780813703432",
+      appId: "1:780813703432:web:fccd2235fb5be134acb4bd"
+    };
+    
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    
+    // ตั้งชื่อ App ID ใน Firestore ให้เป็นเอกลักษณ์ของคุณ
+    const appId = "bill-ocr-gemini-app"; 
+    
+    // 2. Gemini API Setup (ข้อมูลของคุณ)
+    const apiKey = "AIzaSyDUOXC9BNJk6CP5mHklAljCJIFr1J7O5Ps"; 
+
+    // Global State
+    let currentUser = null;
+    let billDatabase = [];
+    let masterData = [];
+    let currentImages = []; 
+    let currentEditingId = null; 
+    let monthlyChartInst = null;
+    let customerChartInst = null;
+
+    // 3. Auth Flow สำหรับนำไปใช้งานจริง (Self-Hosted)
+    const initAuth = async () => {
+        try {
+            await signInAnonymously(auth);
+        } catch (error) {
+            console.error("Firebase Auth Error:", error);
+            showToast("การเชื่อมต่อ Cloud ล้มเหลว");
+        }
+    };
+    
+    initAuth();
+
+    // Listen for Auth changes and load data
+    onAuthStateChanged(auth, (user) => {
+        currentUser = user;
+        const statusEl = document.getElementById('cloud-status');
+        if (user) {
+            statusEl.className = 'cloud-connected';
+            statusEl.innerHTML = '☁️ ออนไลน์ (เชื่อมต่อ Cloud แล้ว)';
+            loadDataFromCloud();
+        } else {
+            statusEl.className = 'cloud-connecting';
+            statusEl.innerHTML = '⚠️ ออฟไลน์';
+        }
+    });
+
+    // 4. Realtime Data Fetching
+    function loadDataFromCloud() {
+        if (!currentUser) return;
+
+        const billsRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bills');
+        onSnapshot(billsRef, (snapshot) => {
+            billDatabase = [];
+            snapshot.forEach(docSnap => {
+                billDatabase.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            billDatabase.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            
+            renderDatabaseUI();
+            populateFilters();
+            window.updateDashboard();
+        }, (err) => console.error("Error fetching bills:", err));
+
+        const masterRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'settings', 'masterData');
+        onSnapshot(masterRef, (docSnap) => {
+            if (docSnap.exists()) {
+                masterData = docSnap.data().items || [];
+            } else {
+                masterData = [];
+            }
+            updateMasterUI();
+        }, (err) => console.error("Error fetching master data:", err));
+    }
+
+
+    // --- EXPOSE FUNCTIONS TO HTML WINDOW ---
+    window.switchTab = (tab) => {
+        document.querySelectorAll('.tab-content, .tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(`view-${tab}`).classList.add('active');
+        document.getElementById(`tab-${tab}`).classList.add('active');
+        if (tab === 'dashboard') { populateFilters(); window.updateDashboard(); }
+    };
+
+    window.clearImage = () => {
+        document.getElementById('file-input').value = '';
+        currentImages = [];
+        document.getElementById('preview-container').classList.add('hidden');
+        document.getElementById('upload-dropzone').classList.remove('hidden');
+        document.getElementById('scan-btn').disabled = true;
+        document.getElementById('result-area').classList.add('hidden');
+    };
+
+    window.resetToUpload = () => {
+        currentEditingId = null;
+        window.clearImage();
+        document.getElementById('cancel-edit-btn').classList.add('hidden');
+    };
+
+    const showToast = (msg) => {
+        const toast = document.getElementById('toast');
+        document.getElementById('toast-msg').textContent = msg;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    };
+
+    // --- BULK UPLOAD LOGIC ---
+    document.getElementById('file-input').addEventListener('change', e => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        
+        document.getElementById('result-area').classList.add('hidden');
+        document.getElementById('error-box').classList.add('hidden');
+        
+        currentImages = [];
+        const gallery = document.getElementById('preview-gallery');
+        gallery.innerHTML = '';
+        
+        let loadedCount = 0;
+        files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = ev => {
+                const base64Data = ev.target.result.split(',')[1];
+                currentImages.push({ mimeType: file.type, data: base64Data, src: ev.target.result });
+                
+                const img = document.createElement('img');
+                img.src = ev.target.result;
+                img.className = 'img-thumbnail shrink-0';
+                gallery.appendChild(img);
+                
+                loadedCount++;
+                if(loadedCount === files.length) {
+                    document.getElementById('preview-count-text').textContent = `เลือกแล้ว ${files.length} ภาพ`;
+                    document.getElementById('preview-container').classList.remove('hidden');
+                    document.getElementById('upload-dropzone').classList.add('hidden');
+                    document.getElementById('scan-btn').disabled = false;
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    });
+
+    window.processBulkScan = async () => {
+        if (!currentImages.length || !currentUser) return;
+
+        const totalImages = currentImages.length;
+        const loadingDiv = document.getElementById('loading');
+        const progressText = document.getElementById('loading-text');
+        const progressBar = document.getElementById('loading-progress');
+        
+        loadingDiv.classList.remove('hidden');
+        document.getElementById('upload-section').classList.add('hidden');
+        document.getElementById('error-box').classList.add('hidden');
+        
+        let successCount = 0;
+
+        for (let i = 0; i < totalImages; i++) {
+            progressText.textContent = `กำลังวิเคราะห์และอัปโหลดภาพที่ ${i + 1} จาก ${totalImages}...`;
+            progressBar.style.width = `${((i) / totalImages) * 100}%`;
+            
+            try {
+                let billData = await scanSingleImage(currentImages[i].mimeType, currentImages[i].data);
+                
+                if (Array.isArray(billData)) billData = billData[0] || {};
+                if (typeof billData !== 'object' || billData === null) billData = {};
+                
+                const newId = Date.now().toString() + i;
+                const safeBillData = {
+                    customer_name: billData.customer_name || 'ไม่ระบุ',
+                    date: billData.date || new Date().toISOString().split('T')[0],
+                    items: Array.isArray(billData.items) ? billData.items : [],
+                    grand_total: parseFloat(billData.grand_total) || 0,
+                    id: newId,
+                    bill_number: generateBillNumber(i),
+                    createdAt: Date.now()
+                };
+                
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bills', newId);
+                await setDoc(docRef, safeBillData);
+                
+                successCount++;
+            } catch (err) {
+                console.error(`Error processing image ${i+1}:`, err);
+            }
+        }
+        
+        progressBar.style.width = `100%`;
+        loadingDiv.classList.add('hidden');
+        document.getElementById('upload-section').classList.remove('hidden');
+        window.clearImage();
+        
+        showToast(`🎉 บันทึกขึ้น Cloud สำเร็จ ${successCount}/${totalImages} ใบ`);
+        window.switchTab('dashboard');
+    };
+
+    async function scanSingleImage(mimeType, base64Data) {
+        const masterListStr = masterData.length > 0 ? `\n\n[Reference Data]: ${masterData.join(', ')}` : '';
+        const promptText = `อ่านบิลและสกัดเป็น JSON
+        กฎ: ถ้าชื่อสินค้าคล้าย Reference Data ให้ยึดตาม Reference ถ้าไม่คล้ายให้อ่านตามลายมือปกติ
+        {
+          "customer_name": "ชื่อลูกค้า หรือ ไม่ระบุ",
+          "date": "YYYY-MM-DD",
+          "items": [ { "name": "ชื่อสินค้า", "qty": ตัวเลข, "unit_price": ตัวเลข, "total": ตัวเลข } ],
+          "grand_total": ตัวเลขรวมทั้งบิล
+        }
+        ${masterListStr}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: promptText }, { inlineData: { mimeType, data: base64Data } }] }],
+                generationConfig: { responseMimeType: "application/json" }
+            })
+        });
+
+        if (!response.ok) throw new Error("API Connection Error");
+        const data = await response.json();
+        return JSON.parse(data.candidates[0].content.parts[0].text);
+    }
+
+    function generateBillNumber(offset = 0) {
+        const d = new Date();
+        const prefix = `INV${d.getFullYear()}${String(d.getMonth() + 1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+        const todaysBills = billDatabase.filter(b => b.bill_number?.startsWith(prefix));
+        return `${prefix}-${String(todaysBills.length + 1 + offset).padStart(3, '0')}`;
+    }
+
+    // --- FORM EDITING ---
+    window.editBill = (id) => {
+        const bill = billDatabase.find(b => b.id === id);
+        if(!bill) return;
+        currentEditingId = id;
+        
+        document.getElementById('edit-bill-no').value = bill.bill_number;
+        document.getElementById('edit-date').value = bill.date || '';
+        document.getElementById('edit-customer').value = bill.customer_name || '';
+        document.getElementById('edit-grand-total').value = bill.grand_total || 0;
+
+        const tbody = document.getElementById('edit-items-tbody');
+        tbody.innerHTML = '';
+        if(bill.items && bill.items.length > 0) bill.items.forEach(item => window.addRowToForm(item));
+        else window.addRowToForm();
+
+        window.switchTab('scan');
+        document.getElementById('upload-section').classList.add('hidden');
+        document.getElementById('cancel-edit-btn').classList.remove('hidden');
+        document.getElementById('result-area').classList.remove('hidden');
+    };
+
+    window.addRowToForm = (item = {name: '', qty: 1, unit_price: 0, total: 0}) => {
+        const tbody = document.getElementById('edit-items-tbody');
+        const tr = document.createElement('tr');
+        tr.className = "border-b border-line/30 hover:bg-black/5 group";
+        const dataListHtml = masterData.length > 0 ? `<datalist id="master-list">${masterData.map(m => `<option value="${m}">`).join('')}</datalist>` : '';
+        const inputProps = masterData.length > 0 ? `list="master-list"` : '';
+
+        tr.innerHTML = `
+            ${dataListHtml}
+            <td class="py-2 px-1"><input type="text" class="edit-input item-name font-semibold" value="${item.name || ''}" placeholder="ชื่อสินค้า" ${inputProps}></td>
+            <td class="py-2 px-1"><input type="number" class="edit-input num item-qty" value="${item.qty || 1}" oninput="calcRow(this)"></td>
+            <td class="py-2 px-1"><input type="number" class="edit-input num item-price" value="${item.unit_price || 0}" step="0.01" oninput="calcRow(this)"></td>
+            <td class="py-2 px-1"><input type="number" class="edit-input num item-total" value="${item.total || 0}" step="0.01"></td>
+            <td class="py-2 px-1 text-center"><button onclick="this.closest('tr').remove(); calculateTotals();" class="text-red-400 p-1">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+    };
+
+    window.addNewItemRow = () => window.addRowToForm();
+    window.calcRow = (inputEl) => {
+        const tr = inputEl.closest('tr');
+        const qty = parseFloat(tr.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(tr.querySelector('.item-price').value) || 0;
+        tr.querySelector('.item-total').value = (qty * price).toFixed(2);
+        window.calculateTotals();
+    };
+    window.calculateTotals = () => {
+        let total = 0;
+        document.querySelectorAll('.item-total').forEach(inp => total += parseFloat(inp.value) || 0);
+        document.getElementById('edit-grand-total').value = total.toFixed(2);
+    };
+
+    window.saveCurrentBill = async () => {
+        if (!currentUser) return showToast("⚠️ กรุณารอเชื่อมต่อ Cloud");
+        const idx = billDatabase.findIndex(b => b.id === currentEditingId);
+        if(idx === -1) return;
+
+        const updatedBill = { ...billDatabase[idx] };
+        updatedBill.date = document.getElementById('edit-date').value;
+        updatedBill.customer_name = document.getElementById('edit-customer').value;
+        updatedBill.grand_total = parseFloat(document.getElementById('edit-grand-total').value) || 0;
+        
+        const newItems = [];
+        document.querySelectorAll('#edit-items-tbody tr').forEach(tr => {
+            const name = tr.querySelector('.item-name').value.trim();
+            if(name) {
+                newItems.push({
+                    name: name, qty: parseFloat(tr.querySelector('.item-qty').value) || 0,
+                    unit_price: parseFloat(tr.querySelector('.item-price').value) || 0,
+                    total: parseFloat(tr.querySelector('.item-total').value) || 0
+                });
+            }
+        });
+        updatedBill.items = newItems;
+        
+        try {
+            const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bills', updatedBill.id);
+            await setDoc(docRef, updatedBill);
+            showToast('☁️ อัปเดตขึ้น Cloud สำเร็จ!');
+            window.resetToUpload();
+            document.getElementById('upload-section').classList.remove('hidden');
+            window.switchTab('history');
+        } catch (e) {
+            console.error("Save error", e);
+            showToast("❌ อัปเดตล้มเหลว");
+        }
+    };
+
+    // --- UI RENDERING & GOOGLE SHEETS SYNC ---
+    function renderDatabaseUI() {
+        const tbody = document.getElementById('database-tbody');
+        if (!billDatabase.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-muted">ยังไม่มีประวัติบิลบน Cloud</td></tr>`; return;
+        }
+        tbody.innerHTML = billDatabase.map(b => `
+            <tr class="hover:bg-paper transition-colors">
+                <td class="py-3 px-4 text-center"><input type="checkbox" class="bill-checkbox accent-cloud w-4 h-4 cursor-pointer" value="${b.id}"></td>
+                <td class="py-3 px-4 font-mono font-semibold cursor-pointer" onclick="editBill('${b.id}')">${b.bill_number}</td>
+                <td class="py-3 px-4 text-muted cursor-pointer" onclick="editBill('${b.id}')">${b.date || '-'}</td>
+                <td class="py-3 px-4 truncate max-w-[150px] cursor-pointer" onclick="editBill('${b.id}')">${b.customer_name || '-'}</td>
+                <td class="py-3 px-4 text-right font-bold text-cloud cursor-pointer" onclick="editBill('${b.id}')">฿${parseFloat(b.grand_total||0).toLocaleString('th-TH')}</td>
+                <td class="py-3 px-4 text-center">
+                    <button onclick="deleteBill('${b.id}')" class="text-red-500 hover:underline text-xs font-semibold">ลบ</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    window.toggleAll = (source) => {
+        document.querySelectorAll('.bill-checkbox').forEach(cb => cb.checked = source.checked);
+    };
+
+    window.syncToSheets = async (event) => {
+        const url = document.getElementById('gas-url').value.trim();
+        if(!url) return showToast('⚠️ กรุณาวาง URL ของ Google Apps Script');
+        
+        const checkedBoxes = document.querySelectorAll('.bill-checkbox:checked');
+        if(checkedBoxes.length === 0) return showToast('⚠️ กรุณาติ๊กเลือกบิลอย่างน้อย 1 รายการ');
+
+        const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+        const selectedBills = billDatabase.filter(b => selectedIds.includes(b.id));
+
+        const exportData = [];
+        selectedBills.forEach(b => {
+            if(!b.items || !b.items.length) {
+                exportData.push([b.bill_number, b.date, b.customer_name, '', 0, 0, 0, b.grand_total]);
+            } else {
+                b.items.forEach((item, i) => {
+                    exportData.push([
+                        b.bill_number, b.date, b.customer_name, 
+                        item.name, item.qty, item.unit_price, item.total, 
+                        i === 0 ? b.grand_total : '' 
+                    ]);
+                });
+            }
+        });
+
+        const btn = event.currentTarget;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ กำลังส่ง...';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(exportData)
+            });
+            
+            const result = await response.json();
+            if(result.status === 'success') {
+                showToast('✅ ส่งเข้า Google Sheets สำเร็จ!');
+                document.getElementById('selectAll').checked = false;
+                document.querySelectorAll('.bill-checkbox').forEach(cb => cb.checked = false);
+            } else {
+                throw new Error(result.message || 'Unknown error');
+            }
+        } catch (err) {
+            console.error(err);
+            showToast('❌ การส่งข้อมูลล้มเหลว โปรดเช็ค URL');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    };
+
+    window.deleteBill = async (id) => {
+        if (!currentUser) return;
+        if(confirm('ลบข้อมูลบิลนี้ออกจาก Cloud ถาวร?')) {
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bills', id);
+                await deleteDoc(docRef);
+                showToast('🗑️ ลบข้อมูลจาก Cloud แล้ว');
+            } catch (e) { console.error("Delete error", e); }
+        }
+    };
+
+    // --- MASTER DATA ---
+    window.processCSV = async () => {
+        if (!currentUser) return showToast("⚠️ กรุณารอเชื่อมต่อ Cloud");
+        const file = document.getElementById('csv-input').files[0];
+        if (!file) return showToast('กรุณาเลือกไฟล์ CSV ก่อน');
+        
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const lines = e.target.result.split('\n');
+            let items = [];
+            for(let i=0; i<lines.length; i++) {
+                const name = lines[i].split(',')[0].replace(/"/g, '').trim();
+                if(name && name !== "ชื่อสินค้า") items.push(name);
+            }
+            const uniqueItems = [...new Set(items)];
+            
+            try {
+                const masterRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'settings', 'masterData');
+                await setDoc(masterRef, { items: uniqueItems });
+                showToast(`☁️ อัปโหลด Master Data ขึ้น Cloud สำเร็จ ${uniqueItems.length} รายการ`);
+                document.getElementById('csv-input').value = '';
+            } catch(err) {
+                console.error("Master upload error", err);
+                showToast('❌ นำเข้าล้มเหลว');
+            }
+        };
+        reader.readAsText(file);
+    };
+
+    function updateMasterUI() {
+        document.getElementById('master-display-count').textContent = masterData.length;
+        if(masterData.length === 0) document.getElementById('master-data-list').innerHTML = 'ไม่มีข้อมูลบน Cloud';
+        else document.getElementById('master-data-list').innerHTML = masterData.slice(0, 50).map((item, idx) => `<div>${idx+1}. ${item}</div>`).join('');
+    }
+
+    window.clearMasterData = async () => {
+        if (!currentUser) return;
+        if(confirm('ล้างคลังสินค้าทั้งหมดบน Cloud?')) { 
+            try {
+                const masterRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'settings', 'masterData');
+                await deleteDoc(masterRef);
+                showToast('🗑️ ล้างคลังบน Cloud แล้ว');
+            } catch (e) { console.error(e); }
+        }
+    };
+
+    // --- DASHBOARD & EXPORT ---
+    function populateFilters() {
+        const months = new Set();
+        const customers = new Set();
+        
+        billDatabase.forEach(b => {
+            if(b.date) {
+                const ym = b.date.substring(0, 7); 
+                if(ym.length === 7 && ym.includes('-')) months.add(ym);
+            }
+            if(b.customer_name && b.customer_name !== 'ไม่ระบุ') customers.add(b.customer_name);
+        });
+
+        const monthSelect = document.getElementById('filter-month');
+        const currMonthVal = monthSelect.value;
+        monthSelect.innerHTML = '<option value="all">ทุกเดือน</option>' + 
+            Array.from(months).sort().reverse().map(m => `<option value="${m}">${m}</option>`).join('');
+        if(months.has(currMonthVal)) monthSelect.value = currMonthVal;
+
+        const custSelect = document.getElementById('filter-customer');
+        const currCustVal = custSelect.value;
+        custSelect.innerHTML = '<option value="all">ทุกลูกค้า</option>' + 
+            Array.from(customers).sort().map(c => `<option value="${c}">${c}</option>`).join('');
+        if(customers.has(currCustVal)) custSelect.value = currCustVal;
+    }
+
+    window.resetFilters = () => {
+        document.getElementById('filter-month').value = 'all';
+        document.getElementById('filter-customer').value = 'all';
+        window.updateDashboard();
+    };
+
+    window.updateDashboard = function updateDashboard() {
+        const filterMonth = document.getElementById('filter-month').value;
+        const filterCustomer = document.getElementById('filter-customer').value;
+
+        const filteredDB = billDatabase.filter(b => {
+            let passMonth = true, passCust = true;
+            if(filterMonth !== 'all') passMonth = b.date && b.date.startsWith(filterMonth);
+            if(filterCustomer !== 'all') passCust = b.customer_name === filterCustomer;
+            return passMonth && passCust;
+        });
+
+        let totalRev = 0, totalItems = 0;
+        const monthlyData = {};
+        const customerData = {};
+
+        filteredDB.forEach(b => {
+            const gTotal = parseFloat(b.grand_total) || 0;
+            totalRev += gTotal;
+            (b.items || []).forEach(i => totalItems += parseFloat(i.qty) || 0);
+
+            const ym = (b.date || 'ไม่ระบุ').substring(0, 7);
+            monthlyData[ym] = (monthlyData[ym] || 0) + gTotal;
+
+            const cust = b.customer_name || 'ลูกค้าทั่วไป';
+            customerData[cust] = (customerData[cust] || 0) + gTotal;
+        });
+
+        const avgBill = filteredDB.length > 0 ? (totalRev / filteredDB.length) : 0;
+
+        document.getElementById('dash-total-revenue').textContent = `฿${totalRev.toLocaleString('th-TH', {minimumFractionDigits:2})}`;
+        document.getElementById('dash-total-bills').innerHTML = `${filteredDB.length} <span class="text-sm font-sans text-muted">ใบ</span>`;
+        document.getElementById('dash-avg-bill').textContent = `฿${avgBill.toLocaleString('th-TH', {minimumFractionDigits:2})}`;
+        document.getElementById('dash-total-items').innerHTML = `${totalItems} <span class="text-sm font-sans text-muted">ชิ้น</span>`;
+
+        renderCharts(monthlyData, customerData);
+    };
+
+    function renderCharts(mObj, cObj) {
+        const mCtx = document.getElementById('monthlyChart').getContext('2d');
+        const mKeys = Object.keys(mObj).sort();
+        if (monthlyChartInst) monthlyChartInst.destroy();
+        monthlyChartInst = new Chart(mCtx, {
+            type: 'bar',
+            data: {
+                labels: mKeys.length ? mKeys : ['ไม่มีข้อมูล'],
+                datasets: [{ label: 'ยอดขาย', data: mKeys.length ? mKeys.map(k=>mObj[k]) : [0], backgroundColor: '#0ea5e9', borderRadius: 4 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+
+        const cCtx = document.getElementById('customerChart').getContext('2d');
+        const cKeys = Object.keys(cObj).sort((a,b) => cObj[b] - cObj[a]).slice(0, 5);
+        if (customerChartInst) customerChartInst.destroy();
+        customerChartInst = new Chart(cCtx, {
+            type: 'bar',
+            data: {
+                labels: cKeys.length ? cKeys : ['ไม่มีข้อมูล'],
+                datasets: [{ label: 'ยอดขาย', data: cKeys.length ? cKeys.map(k=>cObj[k]) : [0], backgroundColor: '#c8601a', borderRadius: 4 }]
+            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+    }
+
+    window.exportBillCSV = () => {
+        if (!billDatabase.length) return showToast('ไม่มีข้อมูล');
+        const rows = [['เลขที่บิล', 'วันที่', 'ชื่อลูกค้า', 'รายการ', 'จำนวน', 'ราคา', 'รวม', 'ยอดทั้งบิล']];
+        billDatabase.forEach(b => {
+            if(!b.items || !b.items.length) rows.push([b.bill_number, b.date, b.customer_name, '', '', '', '', b.grand_total]);
+            else b.items.forEach((item, i) => rows.push([b.bill_number, b.date, b.customer_name, item.name, item.qty, item.unit_price, item.total, i===0?b.grand_total:'']));
+        });
+        const csvContent = '\uFEFF' + rows.map(e => e.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(",")).join("\n");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+        a.download = `cloud_bills_export_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+    };
+</script>
+</body>
+</html>
