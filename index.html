@@ -482,7 +482,8 @@
                 successCount++;
             } catch (err) {
                 console.error(`Error processing image ${i+1}:`, err);
-                showToast(`❌ ขัดข้องที่ภาพ ${i+1}: ตรวจสอบ API Key`);
+                // แสดงข้อความ Error ให้ผู้ใช้เห็นชัดเจนว่าติดที่ API หรือ Firebase
+                showToast(`❌ ขัดข้องที่ภาพ ${i+1}: ${err.message}`);
             }
         }
         
@@ -507,7 +508,8 @@
         }
         ${masterListStr}`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        // ใช้โมเดล gemini-2.5-flash ตัวมาตรฐาน
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -518,10 +520,15 @@
 
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`API Error ${response.status}: ${errText}`);
+            throw new Error(`API Error ${response.status}: โปรดตรวจสอบ API Key`);
         }
+        
         const data = await response.json();
-        return JSON.parse(data.candidates[0].content.parts[0].text);
+        let textResult = data.candidates[0].content.parts[0].text;
+        
+        // ลบ markdown formatting (```json) เผื่อ AI ส่งมา
+        textResult = textResult.replace(/```json/gi, '').replace(/```/g, '').trim();
+        return JSON.parse(textResult);
     }
 
     function generateBillNumber(offset = 0) {
@@ -617,7 +624,7 @@
             window.switchTab('history');
         } catch (e) {
             console.error("Save error", e);
-            showToast("❌ อัปเดตล้มเหลว");
+            showToast(`❌ อัปเดตล้มเหลว: ${e.message}`);
         }
     };
 
@@ -733,7 +740,7 @@
                 document.getElementById('csv-input').value = '';
             } catch(err) {
                 console.error("Master upload error", err);
-                showToast('❌ นำเข้าล้มเหลว');
+                showToast(`❌ นำเข้าล้มเหลว: ${err.message}`);
             }
         };
         reader.readAsText(file);
